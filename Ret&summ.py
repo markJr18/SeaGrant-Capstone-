@@ -6,6 +6,11 @@ import re
 import time
 from typing import Optional
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+import logging
+import hashlib
+import io
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,6 +18,12 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+# Web scraper dependencies
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+import pdfplumber
 
 
 KEYWORD_LIBRARY: dict[str, dict[str, list[str]]] = {
@@ -197,6 +208,15 @@ class ScrapedDocument:
 
 
 @dataclass
+class DocumentLink:
+    """Intermediate representation of a discovered document link during scraping."""
+    url: str                # Full URL to the document
+    link_text: str          # Anchor text from the link
+    found_on_page: str      # URL of the page where this link was found
+    doc_type: str = "pdf"   # Document type inferred from link
+
+
+@dataclass
 class RetrievalResult:
     url: str
     municipality: str
@@ -360,12 +380,24 @@ class RetrievalSummarizationNetwork:
     Results are returned AND appended to self.results for batch export.
     """
 
+    # Common patterns for identifying document center pages during scraping
+    TARGET_PAGE_KEYWORDS = [
+        "agendas", "minutes", "document center", "documents",
+        "meetings", "council", "planning commission", 
+        "public records", "records center", "archive"
+    ]
+
     def __init__(
         self,
         relevance_threshold: float = 0.02,
         use_vector_index: bool = False,
         gemini_model: str = "gemini-1.5-flash",
         rate_limit_delay: float = 1.0,
+        # Scraper-specific params
+        scraper_cache_dir: str = "./scraper_cache",
+        scraper_max_depth: int = 3,
+        scraper_request_delay: float = 1.5,
+        scraper_timeout: int = 30,
     ):
         self.threshold = relevance_threshold
         self.rate_limit_delay = rate_limit_delay
@@ -376,6 +408,130 @@ class RetrievalSummarizationNetwork:
         self._vector_index = VectorIndex() if use_vector_index else None
 
         self.results: list[RetrievalResult] = []
+
+        # Web scraper initialization
+        self.scraper_cache_dir = Path(scraper_cache_dir)
+        self.scraper_cache_dir.mkdir(exist_ok=True)
+        self.scraper_max_depth = scraper_max_depth
+        self.scraper_request_delay = scraper_request_delay
+        self.scraper_timeout = scraper_timeout
+        
+        # Track visited URLs and discovered documents during scraping
+        self._visited_urls: set[str] = set()
+        self._discovered_pdfs: list[DocumentLink] = []
+        
+        # HTTP session for connection pooling and reuse
+        self._session = requests.Session()
+        self._session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (SC Coastal Research Bot) Python/3.x'
+        })
+        
+        # Setup logging for scraper operations
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('scraper.log'),
+                logging.StreamHandler()
+            ]
+        )
+        self._logger = logging.getLogger(__name__)
+
+    # ── Public API - Web Scraper ──────────────────────────────────────────────
+
+    def scrape_municipality(
+        self, 
+        municipality_name: str, 
+        base_url: str,
+        auto_process: bool = True
+    ) -> list[ScrapedDocument]:
+        """
+        Scrape a single municipality website for documents.
+        
+        Workflow:
+            1. Navigate website to find document center pages
+            2. Discover all PDF links on those pages
+            3. Download and extract text from each PDF
+            4. Optionally auto-process through the retrieval pipeline
+        
+        Args:
+            municipality_name: Name from SC_COASTAL_SITES
+            base_url: Root URL of the municipality website
+            auto_process: If True, automatically calls process() on each document
+        
+        Returns:
+            List of ScrapedDocument objects
+        """
+        self._logger.info(f"Starting scrape: {municipality_name} at {base_url}")
+        
+        # Reset scraper state for this municipality
+        self._visited_urls.clear()
+        self._discovered_pdfs.clear()
+        
+        try:
+            # Step 1: Navigate and find document center pages
+            doc_pages = self._find_document_pages(base_url)
+            self._logger.info(f"Found {len(doc_pages)} potential document pages")
+            
+            # Step 2: Discover all PDF links on those pages
+            for page_url in doc_pages:
+                self._discover_pdfs_on_page(page_url)
+            
+            self._logger.info(f"Discovered {len(self._discovered_pdfs)} PDF links")
+            
+            # Step 3: Download and extract text from each PDF
+            scraped_docs = []
+            for i, pdf_link in enumerate(self._discovered_pdfs):
+                self._logger.info(
+                    f"Processing PDF {i+1}/{len(self._discovered_pdfs)}: {pdf_link.url}"
+                )
+                doc = self._download_and_extract_pdf(pdf_link, municipality_name)
+                if doc:
+                    scraped_docs.append(doc)
+                    
+                    # Optionally run through retrieval pipeline immediately
+                    if auto_process:
+                        self.process(doc)
+                
+                time.sleep(self.scraper_request_delay)
+            
+            self._logger.info(
+                f"Successfully scraped {len(scraped_docs)} documents for {municipality_name}"
+            )
+            return scraped_docs
+            
+        except Exception as e:
+            self._logger.error(f"Scraping error for {municipality_name}: {e}", exc_info=True)
+            return []
+
+    def scrape_all_municipalities(
+        self,
+        sites: dict[str, str] = None,
+        auto_process: bool = True
+    ) -> list[ScrapedDocument]:
+        """
+        Scrape all municipalities in the registry (monthly batch operation).
+        
+        Args:
+            sites: Dictionary of {name: url}. Uses SC_COASTAL_SITES if None
+            auto_process: Auto-process each document through the pipeline
+        
+        Returns:
+            Combined list of all scraped documents from all municipalities
+        """
+        if sites is None:
+            sites = SC_COASTAL_SITES
+        
+        all_docs = []
+        total_sites = len(sites)
+        
+        for i, (name, url) in enumerate(sites.items(), 1):
+            self._logger.info(f"\n{'='*70}\n[{i}/{total_sites}] Scraping {name}\n{'='*70}")
+            docs = self.scrape_municipality(name, url, auto_process)
+            all_docs.extend(docs)
+            
+        self._logger.info(f"\n{'='*70}\nScraping complete: {len(all_docs)} total documents\n{'='*70}")
+        return all_docs
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -474,3 +630,313 @@ class RetrievalSummarizationNetwork:
             scored.append((hits, chunk))
         scored.sort(key=lambda x: -x[0])
         return scored[0][1]
+
+    # ── Web Scraper Internal Methods ──────────────────────────────────────────
+
+    def _find_document_pages(self, base_url: str) -> list[str]:
+        """
+        Crawl the site to find pages likely to contain documents.
+        Uses breadth-first search up to max_depth.
+        
+        Returns:
+            List of URLs identified as document center pages
+        """
+        doc_pages = []
+        to_visit = [(base_url, 0)]  # (url, depth)
+        
+        while to_visit:
+            url, depth = to_visit.pop(0)
+            
+            if url in self._visited_urls or depth > self.scraper_max_depth:
+                continue
+            
+            self._visited_urls.add(url)
+            
+            try:
+                html = self._fetch_html(url)
+                if not html:
+                    continue
+                
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Check if this page looks like a document center
+                if self._is_document_page(soup, url):
+                    doc_pages.append(url)
+                    self._logger.info(f"Found document page: {url}")
+                
+                # Find more pages to explore (only if not too deep)
+                if depth < self.scraper_max_depth:
+                    links = self._extract_relevant_links(soup, url)
+                    for link in links:
+                        if link not in self._visited_urls:
+                            to_visit.append((link, depth + 1))
+                
+                time.sleep(self.scraper_request_delay)
+                
+            except Exception as e:
+                self._logger.warning(f"Error visiting {url}: {e}")
+                continue
+        
+        return doc_pages
+
+    def _is_document_page(self, soup: BeautifulSoup, url: str) -> bool:
+        """
+        Heuristic to determine if a page contains documents.
+        Checks URL, title, PDF link density, and headings.
+        """
+        # Check URL for keywords
+        url_lower = url.lower()
+        if any(kw in url_lower for kw in self.TARGET_PAGE_KEYWORDS):
+            return True
+        
+        # Check page title
+        title = soup.find('title')
+        if title and any(kw in title.get_text().lower() for kw in self.TARGET_PAGE_KEYWORDS):
+            return True
+        
+        # Check for multiple PDF links (strong signal)
+        pdf_links = soup.find_all('a', href=re.compile(r'\.pdf$', re.I))
+        if len(pdf_links) >= 3:
+            return True
+        
+        # Check headings for document-related keywords
+        for heading in soup.find_all(['h1', 'h2', 'h3']):
+            text = heading.get_text().lower()
+            if any(kw in text for kw in self.TARGET_PAGE_KEYWORDS):
+                return True
+        
+        return False
+
+    def _extract_relevant_links(self, soup: BeautifulSoup, base_url: str) -> list[str]:
+        """
+        Extract navigation links that might lead to document pages.
+        Only follows links within the same domain.
+        """
+        links = []
+        base_domain = urlparse(base_url).netloc
+        
+        for a_tag in soup.find_all('a', href=True):
+            href = a_tag['href']
+            full_url = urljoin(base_url, href)
+            
+            # Only follow links on the same domain
+            if urlparse(full_url).netloc != base_domain:
+                continue
+            
+            # Check if link text or URL suggests documents
+            link_text = a_tag.get_text().lower()
+            url_lower = full_url.lower()
+            
+            # Match against target keywords
+            if any(kw in link_text or kw in url_lower for kw in self.TARGET_PAGE_KEYWORDS):
+                links.append(full_url)
+        
+        return links
+
+    def _discover_pdfs_on_page(self, page_url: str) -> None:
+        """
+        Find all PDF links on a given page and add to discovered_pdfs list.
+        Deduplicates and infers document type from link text.
+        """
+        try:
+            html = self._fetch_html(page_url)
+            if not html:
+                return
+            
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Find all links ending in .pdf (case insensitive)
+            for a_tag in soup.find_all('a', href=re.compile(r'\.pdf$', re.I)):
+                href = a_tag['href']
+                pdf_url = urljoin(page_url, href)
+                
+                # Skip if already discovered
+                if any(pdf.url == pdf_url for pdf in self._discovered_pdfs):
+                    continue
+                
+                link_text = a_tag.get_text(strip=True)
+                
+                # Infer document type from link text and URL
+                doc_type = self._infer_doc_type(link_text, pdf_url)
+                
+                self._discovered_pdfs.append(DocumentLink(
+                    url=pdf_url,
+                    link_text=link_text,
+                    found_on_page=page_url,
+                    doc_type=doc_type
+                ))
+                
+        except Exception as e:
+            self._logger.warning(f"Error discovering PDFs on {page_url}: {e}")
+
+    def _infer_doc_type(self, link_text: str, url: str) -> str:
+        """
+        Guess document type from link text or URL patterns.
+        Returns category like 'agenda', 'meeting_minutes', 'ordinance', etc.
+        """
+        text = (link_text + " " + url).lower()
+        
+        if any(w in text for w in ["agenda", "agendas"]):
+            return "agenda"
+        elif any(w in text for w in ["minutes", "minute"]):
+            return "meeting_minutes"
+        elif any(w in text for w in ["ordinance", "resolution"]):
+            return "ordinance"
+        elif any(w in text for w in ["report", "environmental", "impact"]):
+            return "report"
+        else:
+            return "unknown"
+
+    def _download_and_extract_pdf(
+        self, 
+        pdf_link: DocumentLink,
+        municipality: str
+    ) -> Optional[ScrapedDocument]:
+        """
+        Download PDF, extract text, and create ScrapedDocument.
+        Uses cache to avoid re-downloading/re-processing the same PDF.
+        """
+        try:
+            # Check cache first (saves bandwidth and time)
+            cache_key = self._get_cache_key(pdf_link.url)
+            cached_text = self._load_from_cache(cache_key)
+            
+            if cached_text:
+                self._logger.info(f"Using cached text for {pdf_link.url}")
+                text = cached_text
+            else:
+                # Download PDF content
+                pdf_content = self._fetch_pdf(pdf_link.url)
+                if not pdf_content:
+                    return None
+                
+                # Extract text from PDF
+                text = self._extract_text_from_pdf(pdf_content)
+                if not text or len(text.strip()) < 100:
+                    self._logger.warning(f"Insufficient text extracted from {pdf_link.url}")
+                    return None
+                
+                # Cache the extracted text for future runs
+                self._save_to_cache(cache_key, text)
+            
+            # Create ScrapedDocument ready for processing pipeline
+            return ScrapedDocument(
+                url=pdf_link.url,
+                municipality=municipality,
+                raw_text=text,
+                doc_type=pdf_link.doc_type,
+                scraped_at=datetime.now().isoformat()
+            )
+            
+        except Exception as e:
+            self._logger.error(f"Error processing PDF {pdf_link.url}: {e}", exc_info=True)
+            return None
+
+    def _fetch_html(self, url: str) -> Optional[str]:
+        """Fetch HTML content from a URL with error handling."""
+        try:
+            response = self._session.get(url, timeout=self.scraper_timeout)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            self._logger.warning(f"Failed to fetch {url}: {e}")
+            return None
+
+    def _fetch_pdf(self, url: str) -> Optional[bytes]:
+        """Download PDF content as bytes."""
+        try:
+            response = self._session.get(url, timeout=self.scraper_timeout)
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            self._logger.warning(f"Failed to download PDF {url}: {e}")
+            return None
+
+    def _extract_text_from_pdf(self, pdf_content: bytes) -> str:
+        """
+        Extract text from PDF bytes using pdfplumber.
+        Processes all pages and combines into single text string.
+        """
+        try:
+            text_parts = []
+            
+            with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+            
+            return "\n\n".join(text_parts)
+            
+        except Exception as e:
+            self._logger.error(f"PDF text extraction failed: {e}")
+            return ""
+
+    def _get_cache_key(self, url: str) -> str:
+        """Generate unique cache filename from URL using MD5 hash."""
+        return hashlib.md5(url.encode()).hexdigest()
+
+    def _save_to_cache(self, cache_key: str, text: str) -> None:
+        """Save extracted text to cache directory for reuse."""
+        cache_file = self.scraper_cache_dir / f"{cache_key}.txt"
+        cache_file.write_text(text, encoding='utf-8')
+
+    def _load_from_cache(self, cache_key: str) -> Optional[str]:
+        """Load previously extracted text from cache if it exists."""
+        cache_file = self.scraper_cache_dir / f"{cache_key}.txt"
+        if cache_file.exists():
+            return cache_file.read_text(encoding='utf-8')
+        return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Usage Example - Monthly Scraping Operation
+# ══════════════════════════════════════════════════════════════════════════════
+
+def main_monthly_scrape():
+    """
+    Example of monthly batch scraping operation.
+    
+    This function demonstrates the complete workflow:
+        1. Initialize the network with scraper enabled
+        2. Scrape all SC coastal municipalities
+        3. Auto-process through keyword filtering and LLM summarization
+        4. Export results to JSON and CSV
+    """
+    # Initialize network with scraper configuration
+    network = RetrievalSummarizationNetwork(
+        relevance_threshold=0.02,
+        scraper_cache_dir="./scraper_cache",
+        scraper_max_depth=3,
+        scraper_request_delay=1.5,  # Respectful rate limiting
+        rate_limit_delay=1.0,        # Gemini API rate limit
+    )
+    
+    # Option 1: Scrape all municipalities (full monthly run)
+    network.scrape_all_municipalities(auto_process=True)
+    
+    # Option 2: Test with a single municipality first
+    # network.scrape_municipality("CHARLESTON", "https://www.charleston-sc.gov")
+    
+    # Option 3: Test with a subset
+    # test_sites = {
+    #     "CHARLESTON": "https://www.charleston-sc.gov",
+    #     "MOUNT PLEASANT": "https://www.tompsc.com",
+    # }
+    # network.scrape_all_municipalities(sites=test_sites, auto_process=True)
+    
+    # Export results
+    timestamp = datetime.now().strftime("%Y-%m")
+    network.export_json(f"output/{timestamp}_results.json")
+    network.export_summary_csv(f"output/{timestamp}_summary.csv")
+    
+    print(f"\n{'='*70}")
+    print(f"Monthly scrape complete!")
+    print(f"Total relevant documents found: {len(network.results)}")
+    print(f"Results exported to: output/{timestamp}_*.json/csv")
+    print(f"{'='*70}")
+
+
+if __name__ == "__main__":
+    # Run the monthly scraping operation
+    main_monthly_scrape()
