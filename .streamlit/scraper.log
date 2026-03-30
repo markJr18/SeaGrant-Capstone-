@@ -1,0 +1,24 @@
+2026-03-30 13:07:48,672 - INFO - Starting scrape for HILTON HEAD ISLAND at https://www.hiltonheadislandsc.gov
+2026-03-30 13:07:48,675 - INFO - Scraper settings: max_depth=2, delay=1.0s, timeout=30s
+2026-03-30 13:07:49,289 - INFO - Found document page: https://www.hiltonheadislandsc.gov
+2026-03-30 13:07:50,295 - INFO - Found 1 potential document pages
+2026-03-30 13:07:50,401 - INFO - Discovered 6 PDF links
+2026-03-30 13:07:50,401 - INFO - Processing PDF 1/6: https://www.hiltonheadislandsc.gov/Documents/Government/Major Initiatives/Comprehensive Plan/ParksRecreationMasterPlan.pdf
+2026-03-30 13:07:50,409 - INFO - Using cached text for https://www.hiltonheadislandsc.gov/Documents/Government/Major Initiatives/Comprehensive Plan/ParksRecreationMasterPlan.pdf
+2026-03-30 13:08:17,287 - INFO - Successfully added/updated document: https://www.hiltonheadislandsc.gov/Documents/Government/Major Initiatives/Comprehensive Plan/ParksRecreationMasterPlan.pdf
+2026-03-30 13:08:18,330 - INFO - Processing PDF 2/6: https://www.hiltonheadislandsc.gov/Documents/Business/Short Term Rentals/Property Owner/GoodNeighborBrochure.pdf
+2026-03-30 13:08:18,516 - INFO - Using cached text for https://www.hiltonheadislandsc.gov/Documents/Business/Short Term Rentals/Property Owner/GoodNeighborBrochure.pdf
+2026-03-30 13:08:19,551 - INFO - Processing PDF 3/6: https://www.hiltonheadislandsc.gov/Documents/Business/Short Term Rentals/Property Owner/STR_Regulations-PropertyDisplay.pdf
+2026-03-30 13:08:19,567 - INFO - Using cached text for https://www.hiltonheadislandsc.gov/Documents/Business/Short Term Rentals/Property Owner/STR_Regulations-PropertyDisplay.pdf
+2026-03-30 13:08:20,580 - INFO - Processing PDF 4/6: https://www.hiltonheadislandsc.gov/Documents/Services/Building and Development Citizen Self Service Portal/How to Use the Building & Development Citizen Self Service Portal/BldgDevCSS-UsersManual.pdf
+2026-03-30 13:08:20,606 - INFO - Using cached text for https://www.hiltonheadislandsc.gov/Documents/Services/Building and Development Citizen Self Service Portal/How to Use the Building & Development Citizen Self Service Portal/BldgDevCSS-UsersManual.pdf
+2026-03-30 13:08:42,692 - INFO - Successfully added/updated document: https://www.hiltonheadislandsc.gov/Documents/Services/Building and Development Citizen Self Service Portal/How to Use the Building & Development Citizen Self Service Portal/BldgDevCSS-UsersManual.pdf
+2026-03-30 13:08:43,704 - INFO - Processing PDF 5/6: https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/NPDES_AnnualReport.pdf
+2026-03-30 13:08:43,763 - INFO - Using cached text for https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/NPDES_AnnualReport.pdf
+2026-03-30 13:09:17,304 - INFO - Successfully added/updated document: https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/NPDES_AnnualReport.pdf
+2026-03-30 13:09:18,337 - INFO - Processing PDF 6/6: https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/RepetitiveLossAreaAnalysis.pdf
+2026-03-30 13:09:18,406 - INFO - Using cached text for https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/RepetitiveLossAreaAnalysis.pdf
+2026-03-30 13:09:50,771 - INFO - Successfully added/updated document: https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/RepetitiveLossAreaAnalysis.pdf
+2026-03-30 13:09:51,828 - INFO - Successfully scraped 6 documents for HILTON HEAD ISLAND
+2026-03-30 13:10:37,322 - INFO - Database initialized successfully.
+2026-03-30 13:10:37,380 - INFO - Found 3 documents for search term 'beach' in 'All'.
