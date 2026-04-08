@@ -99,3 +99,11 @@ def get_all_municipalities() -> list[str]:
     except sqlite3.Error as e:
         logger.error(f"Failed to get municipalities: {e}")
         return []
+def delete_document(doc_id: int):
+    """Deletes a document from the database by its ID."""
+    try:
+        with get_db_connection() as conn:
+            conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            logger.info(f"Successfully deleted document with ID: {doc_id}")
+    except sqlite3.Error as e:
+        logger.error(f"Failed to delete document {doc_id}: {e}")
