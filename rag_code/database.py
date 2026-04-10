@@ -74,7 +74,7 @@ def search_documents(search_term: str, municipality: str = None) -> list:
     """
     try:
         with get_db_connection() as conn:
-            query = "SELECT * FROM documents WHERE raw_text LIKE ?"
+            query = "SELECT id, municipality, url, doc_type, summary, key_findings, relevance_score, scraped_at FROM documents WHERE raw_text LIKE ?"
             params = [f'%{search_term}%']
 
             if municipality and municipality != "All":
@@ -94,7 +94,7 @@ def get_all_municipalities() -> list[str]:
     """Returns a list of all unique municipalities in the database."""
     try:
         with get_db_connection() as conn:
-            results = conn.execute("SELECT DISTINCT municipality FROM documents ORDER BY municipality").fetchall()
+            results = conn.execute("SELECT DISTINCT municipality FROM documents WHERE municipality IS NOT NULL ORDER BY municipality").fetchall()
             return [row['municipality'] for row in results]
     except sqlite3.Error as e:
         logger.error(f"Failed to get municipalities: {e}")
