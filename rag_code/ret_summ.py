@@ -41,19 +41,17 @@ ALL_KEYWORDS = [kw for cat in KEYWORD_LIBRARY.values() for tier in cat.values() 
 SC_COASTAL_SITES = {
     "HILTON HEAD ISLAND": "https://www.hiltonheadislandsc.gov",
     "BLUFFTON": "https://www.townofbluffton.com",
-    "PORT ROYAL": "https://www.portroyal.gov",
+    "PORT ROYAL": "https://www.portroyal.org",
     "BEAUFORT": "https://www.cityofbeaufort.org",
-    "JAMESTOWN": "https://www.jamestownsc.gov",
-    "BONNEAU": "https://www.bonneau-sc.gov",
     "HANAHAN": "https://www.cityofhanahan.com",
-    "GOOSE CREEK": "https://www.cityofgoosecreek.com",
+    "GOOSE CREEK": "https://www.goosecreeksc.gov",
     "ST STEPHEN": "https://www.ststephensc.gov",
     "MONCKS CORNER": "https://www.monckscornersc.gov",
     "McCLELLANVILLE": "https://www.mcclellanvillesc.gov",
     "SULLIVANS ISLAND": "https://www.sullivansisland.com",
     "SEABROOK ISLAND": "https://www.townofseabrookisland.org",
     "LINCOLNVILLE": "https://www.lincolnvillesc.org",
-    "RAVENEL": "https://www.townofravanel.sc.gov",
+    "RAVENEL": "https://www.townofravenel.sc.gov",
     "KIAWAH ISLAND": "https://www.kiawahisland.org",
     "AWENDAW": "https://www.townawendaw.com",
     "CHARLESTON": "https://www.charleston-sc.gov",
@@ -82,8 +80,11 @@ SC_COASTAL_SITES = {
     "COLLETON COUNTY": "https://www.colletoncounty.org",
     "DORCHESTER COUNTY": "https://www.dorchestercounty.net",
     "GEORGETOWN COUNTY": "https://www.georgetowncountysc.org",
-    "HAMPTON COUNTY": "https://www.hamptoncounty.sc.gov",
+    "HAMPTON COUNTY": "https://www.hamptoncountysc.org",
     "HORRY COUNTY": "https://www.horrycounty.org",
+    "JASPER COUNTY" : "https://www.jaspercountysc.gov"
+    "WILLIAMSBURG COUNTY" : "https://www.williamsburgcounty.sc.gov",
+    
 }
 
 @dataclass
