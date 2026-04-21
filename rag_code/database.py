@@ -20,6 +20,22 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 """
 
+CREATE_ARCHIVE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS archived_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_id INTEGER,
+    municipality TEXT NOT NULL,
+    url TEXT NOT NULL,
+    doc_type TEXT,
+    summary TEXT,
+    key_findings TEXT,
+    relevance_score REAL,
+    raw_text TEXT,
+    scraped_at TIMESTAMP,
+    archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
 
@@ -32,10 +48,11 @@ def get_db_connection():
     return conn
 
 def initialize_database():
-    """Creates the database and the documents table if they don't exist."""
+    """Creates the database and the documents / archive tables if they don't exist."""
     try:
         with get_db_connection() as conn:
             conn.execute(CREATE_TABLE_SQL)
+            conn.execute(CREATE_ARCHIVE_TABLE_SQL)
             logger.info("Database initialized successfully.")
     except sqlite3.Error as e:
         logger.error(f"Database initialization failed: {e}")
@@ -100,10 +117,103 @@ def get_all_municipalities() -> list[str]:
         logger.error(f"Failed to get municipalities: {e}")
         return []
 def delete_document(doc_id: int):
-    """Deletes a document from the database by its ID."""
+    """Hard-deletes a document from the documents table by its ID."""
     try:
         with get_db_connection() as conn:
             conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
             logger.info(f"Successfully deleted document with ID: {doc_id}")
     except sqlite3.Error as e:
         logger.error(f"Failed to delete document {doc_id}: {e}")
+
+
+def archive_document(doc_id: int):
+    """Moves a document from documents into archived_documents (soft delete)."""
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM documents WHERE id = ?", (doc_id,)
+            ).fetchone()
+            if row is None:
+                logger.warning(f"archive_document: no document found with id={doc_id}")
+                return
+            conn.execute(
+                """
+                INSERT INTO archived_documents
+                    (original_id, municipality, url, doc_type, summary,
+                     key_findings, relevance_score, raw_text, scraped_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["id"], row["municipality"], row["url"], row["doc_type"],
+                    row["summary"], row["key_findings"], row["relevance_score"],
+                    row["raw_text"], row["scraped_at"],
+                ),
+            )
+            conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            logger.info(f"Archived document id={doc_id}")
+    except sqlite3.Error as e:
+        logger.error(f"Failed to archive document {doc_id}: {e}")
+
+
+def get_archived_documents() -> list[dict]:
+    """Returns all documents in the archive, newest first."""
+    try:
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, original_id, municipality, url, doc_type, summary,
+                       key_findings, relevance_score, scraped_at, archived_at
+                FROM archived_documents
+                ORDER BY archived_at DESC
+                """
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except sqlite3.Error as e:
+        logger.error(f"Failed to fetch archived documents: {e}")
+        return []
+
+
+def restore_document(archive_id: int):
+    """Moves a document from archived_documents back into documents."""
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM archived_documents WHERE id = ?", (archive_id,)
+            ).fetchone()
+            if row is None:
+                logger.warning(f"restore_document: no archive row id={archive_id}")
+                return
+            conn.execute(
+                """
+                INSERT INTO documents
+                    (municipality, url, doc_type, summary, key_findings,
+                     relevance_score, raw_text, scraped_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    doc_type=excluded.doc_type,
+                    summary=excluded.summary,
+                    key_findings=excluded.key_findings,
+                    relevance_score=excluded.relevance_score,
+                    raw_text=excluded.raw_text,
+                    scraped_at=excluded.scraped_at
+                """,
+                (
+                    row["municipality"], row["url"], row["doc_type"],
+                    row["summary"], row["key_findings"], row["relevance_score"],
+                    row["raw_text"], row["scraped_at"],
+                ),
+            )
+            conn.execute("DELETE FROM archived_documents WHERE id = ?", (archive_id,))
+            logger.info(f"Restored archive row id={archive_id} back to documents")
+    except sqlite3.Error as e:
+        logger.error(f"Failed to restore archive row {archive_id}: {e}")
+
+
+def permanently_delete_archived(archive_id: int):
+    """Permanently removes a document from the archive."""
+    try:
+        with get_db_connection() as conn:
+            conn.execute("DELETE FROM archived_documents WHERE id = ?", (archive_id,))
+            logger.info(f"Permanently deleted archive row id={archive_id}")
+    except sqlite3.Error as e:
+        logger.error(f"Failed to permanently delete archive row {archive_id}: {e}")

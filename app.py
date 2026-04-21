@@ -376,14 +376,14 @@ border-radius:12px; overflow:hidden; margin-bottom:4px;">
     col_del, col_close = st.columns([1, 1])
     with col_del:
         if st.button(
-            "Delete from Library",
+            "Move to Archive",
             key=_doc_button_key("delete", url, doc.get("id")),
             type="secondary",
             use_container_width=True,
         ):
-            database.delete_document(doc.get("id"))
+            database.archive_document(doc.get("id"))
             st.session_state.open_card = None
-            st.toast(f"Deleted {filename}")
+            st.toast(f"'{filename}' moved to Archive")
             st.rerun()
 
     with col_close:
@@ -408,6 +408,103 @@ border-radius:12px; overflow:hidden; margin-bottom:4px;">
         """,
         unsafe_allow_html=True,
     )
+
+
+def _render_archived_cards() -> None:
+    """Renders all archived document cards with Restore and Delete actions."""
+    _doc_type_colors = {
+        "report": ("#0d2a40", "#7ab3e0"),
+        "plan": ("#0d2a40", "#7ab3e0"),
+        "annual_report": ("#0d2a1a", "#6abf8a"),
+        "meeting_minutes": ("#0d2a1a", "#6abf8a"),
+        "ordinance": ("#2a1e0d", "#c9924a"),
+        "agenda": ("#2a1e0d", "#c9924a"),
+        "risk": ("#2a150d", "#d97a5a"),
+    }
+
+    def _tc(doc_type: str):
+        key = (doc_type or "").lower()
+        for k, v in _doc_type_colors.items():
+            if k in key:
+                return v
+        return "#0d2a40", "#7ab3e0"
+
+    archived = database.get_archived_documents()
+
+    if not archived:
+        st.markdown(
+            '<p style="font-size:13px; color:var(--text-muted); padding:8px 0;">'
+            'No documents in the archive.</p>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    COLS = 3
+    rows = [archived[i : i + COLS] for i in range(0, len(archived), COLS)]
+    for row in rows:
+        cols = st.columns(COLS)
+        for col, doc in zip(cols, row):
+            bg, fg = _tc(doc.get("doc_type", ""))
+            doc_type_label = _he(
+                (doc.get("doc_type") or "Unknown").replace("_", " ").title()
+            )
+            filename = _he(doc.get("url", "").split("/")[-1] or "Document")
+            raw_summary = doc.get("summary") or ""
+            summary = _he(raw_summary[:120])
+            ellipsis = "…" if len(raw_summary) > 120 else ""
+            score = float(doc.get("relevance_score") or 0.0)
+            muni = _he(doc.get("municipality", "") or "")
+            score_pct = int(min(score * 100, 100))
+            archived_at_raw = doc.get("archived_at") or ""
+            try:
+                from datetime import datetime as _dt
+                archived_at_str = _dt.fromisoformat(str(archived_at_raw)).strftime("%b %-d %Y")
+            except Exception:
+                archived_at_str = str(archived_at_raw)[:10]
+            archive_id = doc.get("id")
+
+            with col:
+                st.markdown(
+                    f"""<div style="background:var(--bg-card); border:0.5px solid var(--border-color);
+  border-radius:12px; padding:1rem 1.25rem; margin-bottom:4px; opacity:0.85;">
+  <span style="font-size:11px; font-weight:500; padding:3px 10px;
+               border-radius:20px; background:{bg}; color:{fg};
+               display:inline-block; margin-bottom:8px;">
+    {doc_type_label}
+  </span>
+  <p style="font-size:13.5px; font-weight:500; color:var(--text-main);
+            line-height:1.4; margin:0 0 4px;">{filename}</p>
+  <p style="font-size:12px; color:var(--text-secondary); line-height:1.5;
+            margin:0 0 8px;">{summary}{ellipsis}</p>
+  <div style="height:3px; background:var(--border-color); border-radius:2px; margin-bottom:8px;">
+    <div style="height:3px; background:#555; border-radius:2px; width:{score_pct}%;"></div>
+  </div>
+  <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted);">
+    <span>{muni}</span>
+    <span>Archived {archived_at_str}</span>
+  </div>
+</div>""",
+                    unsafe_allow_html=True,
+                )
+                btn_r, btn_d = st.columns(2)
+                with btn_r:
+                    if st.button(
+                        "Restore",
+                        key=f"arc_restore_{archive_id}",
+                        use_container_width=True,
+                    ):
+                        database.restore_document(archive_id)
+                        st.toast(f"'{filename}' restored to Library")
+                        st.rerun()
+                with btn_d:
+                    if st.button(
+                        "Delete",
+                        key=f"arc_perm_del_{archive_id}",
+                        use_container_width=True,
+                    ):
+                        database.permanently_delete_archived(archive_id)
+                        st.toast(f"'{filename}' permanently deleted")
+                        st.rerun()
 
 
 def render_search_page() -> None:
@@ -505,38 +602,6 @@ def render_search_page() -> None:
         unsafe_allow_html=True,
     )
 
-    if not docs:
-        if not active_query and active_muni == "All Municipalities":
-            st.markdown(
-                """
-            <div style="text-align:center; padding-top:4rem; padding-bottom:1rem; color:#555;
-                        font-size:14px; line-height:1.6; font-family:'DM Sans',sans-serif;">
-              <div style="font-size:16px; color:var(--text-secondary); margin-bottom:8px; font-weight:500;">
-                Your library is empty
-              </div>
-              <div>No documents have been added yet. Populate your library by scraping municipality sites.</div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
-            
-            b1, b2, b3 = st.columns([1.5, 1, 1.5])
-            with b2:
-                if st.button("Add Document", type="primary", use_container_width=True):
-                    st.session_state.page = "add_document"
-                    st.rerun()
-        else:
-            st.markdown(
-                """
-            <div style="text-align:center; padding:4rem 2rem; color:#555; font-size:14px;">
-              No documents matched your search. Try different keywords or
-              broaden the municipality filter.
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
-        return
-
     doc_type_colors = {
         "report": ("tag-blue", "#0d2a40", "#7ab3e0"),
         "plan": ("tag-blue", "#0d2a40", "#7ab3e0"),
@@ -554,6 +619,38 @@ def render_search_page() -> None:
             if k in key:
                 return v
         return doc_type_colors["unknown"]
+
+    if not docs:
+        if not active_query and active_muni == "All Municipalities":
+            st.markdown(
+                """
+            <div style="text-align:center; padding-top:4rem; padding-bottom:1rem; color:#555;
+                        font-size:14px; line-height:1.6; font-family:'DM Sans',sans-serif;">
+              <div style="font-size:16px; color:var(--text-secondary); margin-bottom:8px; font-weight:500;">
+                Your library is empty
+              </div>
+              <div>No documents have been added yet. Populate your library by scraping municipality sites.</div>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
+            b1, b2, b3 = st.columns([1.5, 1, 1.5])
+            with b2:
+                if st.button("Add Document", type="primary", use_container_width=True):
+                    st.session_state.page = "add_document"
+                    st.rerun()
+        else:
+            st.markdown(
+                """
+            <div style="text-align:center; padding:4rem 2rem; color:#555; font-size:14px;">
+              No documents matched your search. Try different keywords or
+              broaden the municipality filter.
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
+        return
 
     open_url = st.session_state.open_card
 
@@ -573,6 +670,9 @@ def render_search_page() -> None:
         for col, doc in zip(cols, row_docs):
             with col:
                 _render_collapsed_card(doc, tag_colors)
+
+    # ── Archive section ───────────────────────────────────────────────────────
+    # archive is in Settings > Library & Storage
 
 
 def render_add_document_page() -> None:
@@ -814,16 +914,19 @@ def _get_municipality_stats() -> list[dict]:
 
 
 def _render_municipality_card(muni: dict, max_docs: int):
+    selected = st.session_state.get("selected_muni") == muni["name"]
     pct       = int((muni["doc_count"] / max_docs) * 100) if max_docs else 0
     dot_color = "#6abf8a" if muni["scraped"] else "#444444"
     status_text = (
         f"Last scraped {muni['last_scraped']}" if muni["scraped"]
         else "Not yet scraped"
     )
+    border = "var(--accent-blue)" if selected else "var(--border-color)"
 
     st.markdown(f"""
-    <div style="background:var(--bg-card); border:0.5px solid var(--border-color); border-radius:12px;
-                padding:1rem 1.25rem; margin-bottom:8px;">
+    <div style="background:var(--bg-card); border:0.5px solid {border}; border-radius:12px;
+                padding:1rem 1.25rem; margin-bottom:4px; cursor:pointer;
+                transition: border-color 0.15s;">
       <div style="display:flex; align-items:flex-start; justify-content:space-between;
                   margin-bottom:10px;">
         <div>
@@ -854,16 +957,132 @@ def _render_municipality_card(muni: dict, max_docs: int):
     </div>
     """, unsafe_allow_html=True)
 
-    # "Add docs" button navigates to Add Document page with municipality pre-selected
-    st.markdown('<div class="muni-btn-row">', unsafe_allow_html=True)
-    if st.button("Add docs", key=f"muni_scrape_{muni['name']}", use_container_width=True):
-        st.session_state.page = "add_document"
-        st.session_state.preset_municipality = muni["name"]
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    btn_view, btn_add = st.columns(2)
+    with btn_view:
+        view_label = "▾ Hide docs" if selected else "View docs"
+        if st.button(view_label, key=f"muni_view_{muni['name']}", use_container_width=True):
+            if selected:
+                st.session_state.selected_muni = None
+            else:
+                st.session_state.selected_muni = muni["name"]
+            st.rerun()
+    with btn_add:
+        if st.button("Add docs", key=f"muni_scrape_{muni['name']}", use_container_width=True):
+            st.session_state.page = "add_document"
+            st.session_state.preset_municipality = muni["name"]
+            st.rerun()
+
+
+def _render_muni_detail(muni_name: str) -> None:
+    """Shows the documents scraped from a specific municipality."""
+    _doc_type_colors = {
+        "report": ("#0d2a40", "#7ab3e0"),
+        "plan": ("#0d2a40", "#7ab3e0"),
+        "annual_report": ("#0d2a1a", "#6abf8a"),
+        "meeting_minutes": ("#0d2a1a", "#6abf8a"),
+        "ordinance": ("#2a1e0d", "#c9924a"),
+        "agenda": ("#2a1e0d", "#c9924a"),
+        "risk": ("#2a150d", "#d97a5a"),
+    }
+
+    def _tc(doc_type: str):
+        key = (doc_type or "").lower()
+        for k, v in _doc_type_colors.items():
+            if k in key:
+                return v
+        return "#0d2a40", "#7ab3e0"
+
+    try:
+        with database.get_db_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, municipality, url, doc_type, summary, key_findings, "
+                "relevance_score, scraped_at FROM documents "
+                "WHERE municipality = ? ORDER BY relevance_score DESC",
+                (muni_name,),
+            ).fetchall()
+        docs = [dict(r) for r in rows]
+    except Exception:
+        docs = []
+
+    st.markdown(
+        f"""
+        <div style="background:var(--bg-secondary); border:0.5px solid var(--accent-blue);
+                    border-radius:12px; padding:1.25rem 1.5rem; margin:1rem 0 1.25rem;">
+          <p style="font-size:11px; font-weight:600; text-transform:uppercase;
+                    letter-spacing:0.06em; color:var(--accent-text); margin-bottom:4px;">
+            {_he(muni_name)}
+          </p>
+          <p style="font-size:13px; color:var(--text-secondary); margin:0;">
+            {len(docs)} document{'s' if len(docs) != 1 else ''} indexed from this municipality.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if not docs:
+        st.markdown(
+            '<p style="font-size:13.5px; color:var(--text-muted); padding:1rem 0;">'
+            'No documents have been scraped from this municipality yet.</p>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    COLS = 3
+    rows_chunked = [docs[i : i + COLS] for i in range(0, len(docs), COLS)]
+    for chunk in rows_chunked:
+        cols = st.columns(COLS)
+        for col, doc in zip(cols, chunk):
+            bg, fg = _tc(doc.get("doc_type", ""))
+            doc_type_label = _he(
+                (doc.get("doc_type") or "Unknown").replace("_", " ").title()
+            )
+            filename = _he(doc.get("url", "").split("/")[-1] or "Document")
+            raw_summary = doc.get("summary") or ""
+            summary = _he(raw_summary[:110])
+            ellipsis = "…" if len(raw_summary) > 110 else ""
+            score = float(doc.get("relevance_score") or 0.0)
+            score_pct = int(min(score * 100, 100))
+
+            with col:
+                st.markdown(
+                    f"""<div style="background:var(--bg-card); border:0.5px solid var(--border-color);
+  border-radius:12px; padding:1rem 1.25rem; margin-bottom:4px;">
+  <span style="font-size:11px; font-weight:500; padding:3px 10px;
+               border-radius:20px; background:{bg}; color:{fg};
+               display:inline-block; margin-bottom:8px;">
+    {doc_type_label}
+  </span>
+  <p style="font-size:13.5px; font-weight:500; color:var(--text-main);
+            line-height:1.4; margin:0 0 4px;">{filename}</p>
+  <p style="font-size:12px; color:var(--text-secondary); line-height:1.5;
+            margin:0 0 8px;">{summary}{ellipsis}</p>
+  <div style="height:3px; background:var(--border-color); border-radius:2px; margin-bottom:8px;">
+    <div style="height:3px; background:var(--accent-blue); border-radius:2px;
+                width:{score_pct}%;"></div>
+  </div>
+  <p style="font-size:11px; color:var(--text-muted); margin:0;">Relevance: {score:.2f}</p>
+</div>""",
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    "View in Library",
+                    key=f"muni_doc_view_{doc.get('id')}",
+                    use_container_width=True,
+                ):
+                    st.session_state.page = "search"
+                    st.session_state.search_query = ""
+                    st.session_state.muni_filter = muni_name
+                    st.session_state.open_card = doc.get("url")
+                    st.session_state.selected_muni = None
+                    st.rerun()
+
 
 
 def render_municipalities_page():
+    if "selected_muni" not in st.session_state:
+        st.session_state.selected_muni = None
+
     # ── Hero ──────────────────────────────────────────────────────────────────
     st.markdown("""
     <div style="background:var(--bg-secondary); border-bottom:0.5px solid var(--border-color);
@@ -872,7 +1091,8 @@ def render_municipalities_page():
                  color:var(--text-main); margin-bottom:4px;">Municipalities</h1>
       <p style="font-size:13.5px; color:var(--text-secondary); margin:0;">
         Overview of all SC coastal municipalities — documents indexed,
-        scrape status, and quick access.
+        scrape status, and quick access. Click <strong>View docs</strong> on any card to
+        explore its documents.
       </p>
     </div>
     """, unsafe_allow_html=True)
@@ -947,6 +1167,7 @@ def render_municipalities_page():
         """, unsafe_allow_html=True)
         return
 
+    selected = st.session_state.selected_muni
     max_docs = max((m["doc_count"] for m in all_munis), default=1) or 1
     COLS = 3
     rows = [filtered[i:i+COLS] for i in range(0, len(filtered), COLS)]
@@ -956,6 +1177,10 @@ def render_municipalities_page():
         for col, muni in zip(cols, row):
             with col:
                 _render_municipality_card(muni, max_docs)
+
+        # After each row, check if the selected muni was in this row → render detail inline
+        if selected and any(m["name"] == selected for m in row):
+            _render_muni_detail(selected)
 
 
 def render_settings_page() -> None:
@@ -1116,6 +1341,356 @@ def render_settings_page() -> None:
                     st.toast(f"Appearance updated to {temp_mode} mode!")
                     st.rerun()
                     
+        elif st.session_state.settings_tab == "scraper":
+            st.markdown(
+                """
+                <h1 style="font-family:'DM Sans', sans-serif; font-size:20px; font-weight:500; color:var(--text-main); margin-bottom:4px;">Scraper Defaults</h1>
+                <p style="font-size:14px; color:var(--text-secondary); margin-bottom:24px;">
+                  Set the default parameters used when scraping municipality websites.
+                  These can be overridden per-scrape on the Add Document page.
+                </p>
+                """, unsafe_allow_html=True
+            )
+
+            with st.container(border=True):
+                st.markdown('<p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.05em;">CRAWLING</p>', unsafe_allow_html=True)
+
+                st.markdown(
+                    '<p style="font-size:13.5px; color:var(--text-main); margin-bottom:0;">Scraping depth '
+                    '<span style="color:var(--text-muted);">— how many link-levels deep to follow from the base URL</span></p>',
+                    unsafe_allow_html=True
+                )
+                temp_depth = st.slider(
+                    "Scraping depth", min_value=1, max_value=5,
+                    value=int(st.session_state.get("settings_depth", 3)),
+                    step=1, label_visibility="collapsed", key="input_depth"
+                )
+
+                st.markdown("<hr style='border:none; border-top:1px solid var(--border-color); margin:16px 0;'>", unsafe_allow_html=True)
+
+                st.markdown(
+                    '<p style="font-size:13.5px; color:var(--text-main); margin-bottom:0;">Request delay '
+                    '<span style="color:var(--text-muted);">— seconds to wait between HTTP requests to avoid rate-limiting</span></p>',
+                    unsafe_allow_html=True
+                )
+                temp_delay = st.slider(
+                    "Request delay (s)", min_value=0.1, max_value=5.0,
+                    value=float(st.session_state.get("settings_delay", 1.0)),
+                    step=0.1, label_visibility="collapsed", key="input_delay"
+                )
+
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+            with st.container(border=True):
+                st.markdown('<p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.05em;">BEHAVIOR</p>', unsafe_allow_html=True)
+
+                c1, c2 = st.columns([5, 1])
+                with c1:
+                    st.markdown("""
+                    <div style="margin-top:2px;">
+                        <span style="font-size:14.5px; font-weight:500; color:var(--text-main);">Skip already-indexed URLs</span><br>
+                        <span style="font-size:13px; color:var(--text-secondary);">Do not re-scrape documents that are already present in the library</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c2:
+                    st.toggle("skip_indexed", value=True, label_visibility="collapsed", key="toggle_skip_indexed")
+
+                st.markdown("<hr style='border:none; border-top:1px solid var(--border-color); margin:16px 0;'>", unsafe_allow_html=True)
+
+                c3, c4 = st.columns([5, 1])
+                with c3:
+                    st.markdown("""
+                    <div style="margin-top:2px;">
+                        <span style="font-size:14.5px; font-weight:500; color:var(--text-main);">Follow external links</span><br>
+                        <span style="font-size:13px; color:var(--text-secondary);">Allow the crawler to follow links that lead outside the base domain</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c4:
+                    st.toggle("follow_external", value=False, label_visibility="collapsed", key="toggle_follow_external")
+
+            st.markdown('<div style="height:15px;"></div>', unsafe_allow_html=True)
+            ac1, ac2, ac3 = st.columns([2.5, 1, 1.2])
+            with ac2:
+                if st.button("Cancel", use_container_width=True, key="cancel_scraper"):
+                    st.rerun()
+            with ac3:
+                if st.button("Save changes", type="primary", use_container_width=True, key="save_scraper"):
+                    st.session_state.settings_depth = temp_depth
+                    st.session_state.settings_delay = temp_delay
+                    st.toast("Scraper defaults saved!")
+                    st.rerun()
+
+        elif st.session_state.settings_tab == "munis":
+            st.markdown(
+                """
+                <h1 style="font-family:'DM Sans', sans-serif; font-size:20px; font-weight:500; color:var(--text-main); margin-bottom:4px;">Municipalities</h1>
+                <p style="font-size:14px; color:var(--text-secondary); margin-bottom:24px;">
+                  View and manage the list of South Carolina coastal municipalities tracked by this application.
+                </p>
+                """, unsafe_allow_html=True
+            )
+
+            all_munis = _get_municipality_stats()
+            total_docs_munis = sum(m["doc_count"] for m in all_munis)
+            scraped_count = sum(1 for m in all_munis if m["scraped"])
+
+            ms1, ms2, ms3 = st.columns(3)
+            for col, label, value, color in [
+                (ms1, "Total municipalities",  len(all_munis),   "var(--text-main)"),
+                (ms2, "Scraped",               scraped_count,    "#6abf8a"),
+                (ms3, "Total documents",        total_docs_munis, "var(--text-main)"),
+            ]:
+                with col:
+                    st.markdown(f"""
+                    <div style="background:var(--bg-card); border:0.5px solid var(--border-color);
+                                border-radius:8px; padding:1rem; margin-bottom:1rem;">
+                      <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;
+                                  letter-spacing:0.06em; margin-bottom:6px;">{label}</div>
+                      <div style="font-size:22px; font-weight:500; color:{color};">{value}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown('<p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.06em; margin-bottom:10px; margin-top:8px;">ALL MUNICIPALITIES</p>', unsafe_allow_html=True)
+
+            for muni in all_munis:
+                dot = "#6abf8a" if muni["scraped"] else "#555555"
+                status = f"Last scraped {muni['last_scraped']}" if muni["scraped"] else "Not yet scraped"
+                st.markdown(f"""
+                <div style="background:var(--bg-card); border:0.5px solid var(--border-color);
+                            border-radius:10px; padding:0.9rem 1.25rem; margin-bottom:6px;
+                            display:flex; align-items:center; justify-content:space-between;">
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%;
+                                 background:{dot}; flex-shrink:0;"></span>
+                    <div>
+                      <div style="font-size:13.5px; font-weight:500; color:var(--text-main);">{muni['name']}</div>
+                      <div style="font-size:11.5px; color:var(--text-muted); margin-top:1px;">{status}</div>
+                    </div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div style="font-size:18px; font-weight:500; color:var(--text-main);">{muni['doc_count']}</div>
+                    <div style="font-size:10px; color:var(--text-muted);">docs</div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        elif st.session_state.settings_tab == "lib":
+            st.markdown(
+                """
+                <h1 style="font-family:'DM Sans', sans-serif; font-size:20px; font-weight:500; color:var(--text-main); margin-bottom:4px;">Library &amp; Storage</h1>
+                <p style="font-size:14px; color:var(--text-secondary); margin-bottom:24px;">
+                  Monitor your local document database and manage stored data.
+                </p>
+                """, unsafe_allow_html=True
+            )
+
+            # Gather DB stats
+            try:
+                with database.get_db_connection() as _conn:
+                    total_lib_docs = _conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+                    total_munis_with_docs = _conn.execute("SELECT COUNT(DISTINCT municipality) FROM documents").fetchone()[0]
+                    oldest_row = _conn.execute("SELECT MIN(scraped_at) FROM documents").fetchone()[0]
+                    newest_row = _conn.execute("SELECT MAX(scraped_at) FROM documents").fetchone()[0]
+                from datetime import datetime as _dt
+                def _fmt_date(s):
+                    if not s:
+                        return "—"
+                    try:
+                        return _dt.fromisoformat(str(s)).strftime("%b %-d %Y, %I:%M %p")
+                    except Exception:
+                        return str(s)[:16]
+                oldest_str = _fmt_date(oldest_row)
+                newest_str = _fmt_date(newest_row)
+            except Exception:
+                total_lib_docs = 0
+                total_munis_with_docs = 0
+                oldest_str = "—"
+                newest_str = "—"
+
+            with st.container(border=True):
+                st.markdown('<p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:16px; letter-spacing:0.05em;">DATABASE OVERVIEW</p>', unsafe_allow_html=True)
+                lb1, lb2 = st.columns(2)
+                for col, label, value in [
+                    (lb1, "Total documents indexed", str(total_lib_docs)),
+                    (lb2, "Municipalities with data",  str(total_munis_with_docs)),
+                ]:
+                    with col:
+                        st.markdown(f"""
+                        <div style="margin-bottom:16px;">
+                          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">{label}</div>
+                          <div style="font-size:24px; font-weight:500; color:var(--text-main);">{value}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                st.markdown("<hr style='border:none; border-top:1px solid var(--border-color); margin:4px 0 16px;'>", unsafe_allow_html=True)
+
+                lt1, lt2 = st.columns(2)
+                for col, label, value in [
+                    (lt1, "Oldest entry",  oldest_str),
+                    (lt2, "Latest entry",  newest_str),
+                ]:
+                    with col:
+                        st.markdown(f"""
+                        <div>
+                          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">{label}</div>
+                          <div style="font-size:13px; color:var(--text-secondary);">{value}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+            with st.container(border=True):
+                st.markdown("""
+                <p style="font-size:11px; font-weight:600; text-transform:uppercase; color:#d97a5a; margin-bottom:6px; letter-spacing:0.05em;">DANGER ZONE</p>
+                <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">
+                  Permanently delete all documents from the local database. This action cannot be undone.
+                </p>
+                """, unsafe_allow_html=True)
+
+                if "confirm_clear_lib" not in st.session_state:
+                    st.session_state.confirm_clear_lib = False
+
+                if not st.session_state.confirm_clear_lib:
+                    if st.button("Clear entire library", key="clear_lib_btn"):
+                        st.session_state.confirm_clear_lib = True
+                        st.rerun()
+                else:
+                    st.warning("Are you sure? This will delete **all** indexed documents and cannot be undone.")
+                    cc1, cc2, _ = st.columns([1, 1, 3])
+                    with cc1:
+                        if st.button("Yes, clear it", type="primary", key="clear_lib_confirm"):
+                            try:
+                                with database.get_db_connection() as _conn:
+                                    _conn.execute("DELETE FROM documents")
+                                    _conn.commit()
+                                st.toast("Library cleared successfully.")
+                            except Exception as _e:
+                                st.error(f"Failed to clear library: {_e}")
+                            st.session_state.confirm_clear_lib = False
+                            st.rerun()
+                    with cc2:
+                        if st.button("Cancel", key="clear_lib_cancel"):
+                            st.session_state.confirm_clear_lib = False
+                            st.rerun()
+
+
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+            archived_docs = database.get_archived_documents()
+            arc_count = len(archived_docs)
+            with st.expander(f"🗂  Archive ({arc_count} document{'s' if arc_count != 1 else ''})", expanded=False):
+                st.markdown(
+                    '<p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">'
+                    'Documents removed from the library are held here. Restore them to make them'
+                    ' searchable again, or permanently delete them.</p>',
+                    unsafe_allow_html=True,
+                )
+                _render_archived_cards()
+
+        elif st.session_state.settings_tab == "about":
+            st.markdown(
+                """
+                <h1 style="font-family:'DM Sans', sans-serif; font-size:20px; font-weight:500; color:var(--text-main); margin-bottom:4px;">About &amp; Credits</h1>
+                <p style="font-size:14px; color:var(--text-secondary); margin-bottom:24px;">
+                  Learn about the SC-Coasts Coastal Resilience Analyzer and the team behind it.
+                </p>
+                """, unsafe_allow_html=True
+            )
+
+            with st.container(border=True):
+                st.markdown("""
+                <p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:14px; letter-spacing:0.05em;">WHAT IS SC-COASTS?</p>
+                <p style="font-size:14.5px; font-weight:500; color:var(--text-main); margin-bottom:8px;">A RAG-powered coastal-policy intelligence system for South Carolina.</p>
+                <p style="font-size:13.5px; color:var(--text-secondary); line-height:1.75; margin-bottom:12px;">
+                  SC-Coasts is an open-source research tool developed as part of a Sea Grant capstone project.
+                  It automatically crawls public municipal websites across South Carolina's coastline,
+                  extracts PDF and HTML documents related to coastal resilience, and uses a local
+                  large language model (via <strong style="color:var(--text-main);">Ollama</strong>) to
+                  summarize, classify, and score each document for relevance.
+                </p>
+                <p style="font-size:13.5px; color:var(--text-secondary); line-height:1.75;">
+                  All indexed documents are stored in a local SQLite database and are instantly
+                  searchable through the <em>Search</em> tab, enabling researchers, planners, and
+                  policymakers to quickly surface relevant ordinances, flood-management plans,
+                  climate-adaptation strategies, and more — without relying on a cloud subscription.
+                </p>
+                """, unsafe_allow_html=True)
+
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+            with st.container(border=True):
+                st.markdown("""
+                <p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:14px; letter-spacing:0.05em;">HOW TO USE</p>
+                """, unsafe_allow_html=True)
+
+                steps = [
+                    ("1", "Add Documents", "Navigate to <strong>Add Document</strong> and select a South Carolina coastal municipality (or paste a custom URL). Adjust the scraping depth, request delay, and relevance threshold, then click <em>Start Scraping &amp; Analysis</em>. The system will crawl the site, extract documents, and store summaries in your local library."),
+                    ("2", "Browse the Library", "Visit the <strong>Search</strong> tab to explore all indexed documents. Filter by municipality or topic chip, or type free-text keywords to find specific plans, reports, or ordinances. Click <em>View details</em> on any card to see the full summary, key findings, and source link."),
+                    ("3", "Monitor Municipalities", "The <strong>Municipalities</strong> tab shows an overview of every tracked SC coastal site — including how many documents have been indexed, when they were last scraped, and quick links to add more documents for a location."),
+                    ("4", "Customize Settings", "Use this <strong>Settings</strong> page to tune the RAG model, set scraper defaults that persist across sessions, and switch between Dark and Light display modes."),
+                ]
+
+                for num, title, desc in steps:
+                    st.markdown(f"""
+                    <div style="display:flex; gap:16px; margin-bottom:20px; align-items:flex-start;">
+                      <div style="flex-shrink:0; width:28px; height:28px; border-radius:50%;
+                                  background:var(--accent-blue); display:flex; align-items:center;
+                                  justify-content:center; font-size:12px; font-weight:600; color:#fff;
+                                  margin-top:1px;">{num}</div>
+                      <div>
+                        <div style="font-size:14px; font-weight:600; color:var(--text-main); margin-bottom:4px;">{title}</div>
+                        <div style="font-size:13.5px; color:var(--text-secondary); line-height:1.7;">{desc}</div>
+                      </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+            with st.container(border=True):
+                st.markdown("""
+                <p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:14px; letter-spacing:0.05em;">TECHNICAL STACK</p>
+                """, unsafe_allow_html=True)
+
+                tech_items = [
+                    ("🖥️", "Frontend",    "Streamlit — interactive Python web UI"),
+                    ("🤖", "LLM",         "Ollama (local) · llama3.2:latest by default"),
+                    ("🔍", "Retrieval",   "SQLite full-text search with relevance scoring"),
+                    ("🕷️", "Crawling",    "Custom async scraper with configurable depth &amp; delay"),
+                    ("📄", "Parsing",     "PDF &amp; HTML extraction with LLM-assisted summarization"),
+                ]
+
+                for icon, label, detail in tech_items:
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:14px; padding:10px 0;
+                                border-bottom:0.5px solid var(--border-color);">
+                      <span style="font-size:20px; width:28px; text-align:center;">{icon}</span>
+                      <div>
+                        <span style="font-size:12px; font-weight:600; color:var(--text-muted);
+                                     text-transform:uppercase; letter-spacing:0.04em;">{label}</span>
+                        <span style="font-size:13.5px; color:var(--text-secondary); margin-left:10px;">{detail}</span>
+                      </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+
+            st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+            with st.container(border=True):
+                st.markdown("""
+                <p style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:14px; letter-spacing:0.05em;">CREDITS</p>
+                <p style="font-size:13.5px; color:var(--text-secondary); line-height:1.75; margin-bottom:10px;">
+                  Developed by the <strong style="color:var(--text-main);">Sea Grant Capstone Team</strong>
+                  in partnership with the South Carolina Sea Grant Consortium.
+                  This project is part of an academic research initiative to improve coastal
+                  community access to resilience planning resources.
+                </p>
+                <p style="font-size:13px; color:var(--text-muted); line-height:1.6;">
+                  Data sourced from publicly available municipal government websites across
+                  the South Carolina coast. No proprietary data is collected or stored.
+                </p>
+                """, unsafe_allow_html=True)
+
         else:
             st.markdown(
                 f"""
