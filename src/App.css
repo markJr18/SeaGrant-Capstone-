@@ -1,0 +1,230 @@
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  color: #e0e0e0;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 3rem;
+  border-bottom: 2px solid #3b82f6;
+  padding-bottom: 1rem;
+}
+
+header h1 {
+  color: #3b82f6;
+  margin-bottom: 0.5rem;
+}
+
+.search-section {
+  margin-bottom: 3rem;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.1rem;
+  border: 2px solid #333;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  transition: border-color 0.3s;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.keyword-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyword-chips button {
+  padding: 0.5rem 1rem;
+  background-color: #2d2d2d;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.keyword-chips button:hover {
+  background-color: #3d3d3d;
+  border-color: #555;
+}
+
+.keyword-chips button.active {
+  background-color: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.reports-section h2 {
+  color: #3b82f6;
+  margin: 0;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  border-left: 4px solid #3b82f6;
+  padding-left: 1rem;
+}
+
+.count-badge {
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+  color: #b0b0b0;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #333;
+  border-top: 4px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.no-results {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+  font-style: italic;
+}
+
+.card-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-type {
+  color: #3b82f6;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.report-date {
+  color: #666;
+}
+
+.report-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.report-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1.5rem;
+}
+
+.topic-tag {
+  font-size: 0.75rem;
+  background-color: #2d2d2d;
+  color: #94a3b8;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #444;
+}
+
+.view-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  margin-top: auto;
+}
+
+.report-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 2rem;
+}
+
+.report-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  border: 1px solid #333;
+  border-radius: 12px;
+  background-color: #1e1e1e;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.report-card:hover {
+  transform: translateY(-8px);
+  border-color: #3b82f6;
+  box-shadow: 0 12px 20px rgba(0,0,0,0.4);
+}
+
+.report-card h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #fff;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.report-card p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #b0b0b0;
+}
+
+.report-card a {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #60a5fa;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.report-card a:hover {
+  text-decoration: underline;
+}

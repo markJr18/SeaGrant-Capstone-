@@ -1,0 +1,9 @@
+2026-04-10 11:08:05,143 - INFO - Starting scrape for HILTON HEAD ISLAND at https://www.hiltonheadislandsc.gov
+2026-04-10 11:08:05,143 - INFO - Scraper settings: max_depth=3, delay=1.0s, timeout=30s
+2026-04-10 11:08:05,447 - INFO - Found document page: https://www.hiltonheadislandsc.gov
+2026-04-10 11:08:06,337 - INFO - Database initialized successfully.
+2026-04-10 11:08:06,454 - INFO - Found 1 potential document pages
+2026-04-10 11:08:06,728 - INFO - Discovered 4 PDF links
+2026-04-10 11:08:06,729 - INFO - Processing PDF 1/4: https://www.hiltonheadislandsc.gov/Documents/Government/Plans Guides and Reports/ParksRecreationMasterPlan.pdf
+2026-04-10 11:08:08,236 - INFO - Database initialized successfully.
+2026-04-10 11:08:08,284 - INFO - Database initialized successfully.

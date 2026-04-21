@@ -1,0 +1,26 @@
+
+# Node / JS
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database
+document_library.db
+document_library.db-journal
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Scraper Cache
+scraper_cache/
+
+# Environment
+.env
+*.env
+
+# OS-specific
+.DS_Store
+Thumbs.db
