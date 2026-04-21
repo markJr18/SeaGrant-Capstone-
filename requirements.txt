@@ -1,4 +1,19 @@
+# UI and Data
 streamlit
+pandas
+
+# Core LangChain dependencies
+langchain-google-genai
+langchain-core
+langchain-text-splitters
+langchain-community
+faiss-cpu
+
+# Web scraping dependencies
 requests
 beautifulsoup4
-pandas
+lxml
+pdfplumber
+
+# Already installed (likely)
+# - No additional dependencies needed for standard library modules
